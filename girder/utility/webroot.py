@@ -154,8 +154,7 @@ class Webroot(WebrootBase):
     def _renderHTML(self):
         self.vars['pluginCss'] = []
         self.vars['pluginJs'] = []
-        builtDir = os.path.join(constants.STATIC_ROOT_DIR, 'clients', 'web',
-                                'static', 'built', 'plugins')
+        builtDir = os.path.join(constants.STATIC_ROOT_DIR)
         for plugin in self.vars['plugins']:
             if os.path.exists(os.path.join(builtDir, plugin, 'plugin.min.css')):
                 self.vars['pluginCss'].append(plugin)
