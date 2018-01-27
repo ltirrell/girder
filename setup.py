@@ -162,7 +162,7 @@ setup(
     entry_points={
         'console_scripts': [
             'girder-server = girder.__main__:main',
-            'girder-install = girder.utility.install:main',
+            'girder-build = girder.commands.build:build',
             'girder-sftpd = girder.api.sftp:_main',
             'girder-shell = girder.utility.shell:main'
         ]
