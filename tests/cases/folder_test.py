@@ -25,6 +25,7 @@ from .. import base
 
 from girder import events
 from girder.constants import AccessType, SortDir
+from girder.exceptions import AccessException
 from girder.models.notification import Notification, ProgressState
 from girder.models.folder import Folder
 from girder.models.item import Item
@@ -548,6 +549,53 @@ class FolderTestCase(base.TestCase):
         self.assertEqual(folder['baseParentId'], self.admin['_id'])
 
     def testParentsToRoot(self):
+        """
+        Demonstrate that parentsToRoot works even if the user has missing right access
+        on one or more folder in the full path.
+        This tests for a user with right access, a user without and a none user.
+        """
+        # Create the parent chain
+        F1 = Folder().createFolder(
+            parent=self.admin, parentType='user', creator=self.admin,
+            name='F1', public=True)
+        F2 = Folder().createFolder(
+            parent=F1, parentType='folder', creator=self.admin,
+            name='F2', public=True)
+        privateFolder = Folder().createFolder(
+            parent=F2, parentType='folder', creator=self.admin,
+            name='F3', public=False)
+        F4 = Folder().createFolder(
+            parent=privateFolder, parentType='folder', creator=self.admin,
+            name='F4', public=True)
+
+        # Get the parent chain for a user who has access rights
+        parents = Folder().parentsToRoot(F4, user=self.admin)
+        for idx in range(1, 4):
+            self.assertEqual(parents[idx]['object']['name'], 'F%i' % idx)
+
+        # Get the parent chain for a user who doesn't have access rights
+        try:
+            parents = Folder().parentsToRoot(F4, user=self.user)
+            for idx in range(1, 4):
+                if idx == 3:
+                    self.assertEqual(parents[idx], None)
+                else:
+                    self.assertEqual(parents[idx]['object']['name'], 'F%i' % idx)
+        except AccessException:
+            self.assertRaises(AccessException, Folder().parentsToRoot, F4, user=self.user)
+
+        # Get the parent chain for a none user
+        try:
+            parents = Folder().parentsToRoot(F4, user=None)
+            for idx in range(1, 4):
+                if idx == 3:
+                    self.assertEqual(parents[idx], None)
+                else:
+                    self.assertEqual(parents[idx]['object']['name'], 'F%i' % idx)
+        except AccessException:
+            self.assertRaises(AccessException, Folder().parentsToRoot, F4, user=None)
+
+    def testParentsToRootForced(self):
         """
         Demonstrate that forcing parentsToRoot will cause it to skip the
         filtering process.

@@ -17,22 +17,23 @@
 #  limitations under the License.
 ###############################################################################
 
+from bson.objectid import ObjectId
 import datetime
 import io
 import json
 import os
 import six
+from six.moves import range, urllib
 import zipfile
 
 from .. import base
 
-import girder.utility.ziputil
 from girder.models.notification import Notification, ProgressState
 from girder.models.collection import Collection
 from girder.models.item import Item
 from girder.models.folder import Folder
 from girder.models.user import User
-from six.moves import range, urllib
+import girder.utility.ziputil
 
 
 def setUpModule():
@@ -179,6 +180,22 @@ class ResourceTestCase(base.TestCase):
             'name', part['object'].get('login', '')) for part in parents] +
             [item['name'], name]))
         return (file, path, contents)
+
+    def _createParentChain(self):
+        # Create the parent chain
+        F1 = Folder().createFolder(
+            parent=self.admin, parentType='user', creator=self.admin,
+            name='F1', public=True)
+        F2 = Folder().createFolder(
+            parent=F1, parentType='folder', creator=self.admin,
+            name='F2', public=True)
+        privateFolder = Folder().createFolder(
+            parent=F2, parentType='folder', creator=self.admin,
+            name='F3', public=False)
+        F4 = Folder().createFolder(
+            parent=privateFolder, parentType='folder', creator=self.admin,
+            name='F4', public=True)
+        return F1, F2, privateFolder, F4
 
     def testDownloadResources(self):
         self._createFiles()
@@ -478,6 +495,46 @@ class ResourceTestCase(base.TestCase):
         self.assertStatusOk(resp)
         self.assertEqual(resp.json, None)
 
+        # Create the parent chain
+        F1, F2, privateFolder, F4 = self._createParentChain()
+        # Test access denied response for access 'hidden folder' for user with access rights,
+        # user without and none user
+        resp = self.request(path='/resource/lookup',
+                            method='GET', user=self.admin,
+                            params={
+                                'path': '/user/%s/%s/%s/%s/%s' % (
+                                    self.admin['login'],
+                                    F1['name'],
+                                    F2['name'],
+                                    privateFolder['name'],
+                                    F4['name'])
+                            })
+        self.assertStatusOk(resp)
+        self.assertEqual(resp.json['name'], F4['name'])
+        self.assertEqual(ObjectId(resp.json['_id']), F4['_id'])
+        resp = self.request(path='/resource/lookup',
+                            method='GET', user=self.user,
+                            params={
+                                'path': '/user/%s/%s/%s/%s/%s' % (
+                                    self.admin['login'],
+                                    F1['name'],
+                                    F2['name'],
+                                    privateFolder['name'],
+                                    F4['name'])
+                            })
+        self.assertStatus(resp, 400)
+        resp = self.request(path='/resource/lookup',
+                            method='GET', user=None,
+                            params={
+                                'path': '/user/%s/%s/%s/%s/%s' % (
+                                    self.admin['login'],
+                                    F1['name'],
+                                    F2['name'],
+                                    privateFolder['name'],
+                                    F4['name'])
+                            })
+        self.assertStatus(resp, 400)
+
     def testGetResourcePath(self):
         self._createFiles()
 
@@ -533,6 +590,25 @@ class ResourceTestCase(base.TestCase):
                             method='GET', user=self.user,
                             params={'type': 'invalid type'})
         self.assertStatus(resp, 400)
+
+        # Create the parent chain
+        F1, F2, privateFolder, F4 = self._createParentChain()
+        # Test access denied response for access 'hidden folder' for user with access rights,
+        # user without and none user
+        resp = self.request(path='/resource/%s/path' % F4['_id'],
+                            method='GET', user=self.admin,
+                            params={'type': 'folder'})
+        self.assertStatusOk(resp)
+        self.assertEqual(resp.json, '/user/%s/%s/%s/%s/%s' % (
+            self.admin['login'], F1['name'], F2['name'], privateFolder['name'], F4['name']))
+        resp = self.request(path='/resource/%s/path' % F4['_id'],
+                            method='GET', user=self.user,
+                            params={'type': 'folder'})
+        self.assertStatus(resp, 403)
+        resp = self.request(path='/resource/%s/path' % F4['_id'],
+                            method='GET', user=None,
+                            params={'type': 'folder'})
+        self.assertStatus(resp, 401)
 
     def testMove(self):
         self._createFiles()
